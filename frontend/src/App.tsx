@@ -1,12 +1,15 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import React, { useState } from 'react';
 import { useUserStore } from './store/userStore';
+import { useMealPlanStore } from './store/mealPlanStore';
 import QuickSetup from './components/setup/QuickSetup';
 import Dashboard from './components/dashboard/Dashboard';
+import WeeklyPlanner from './components/planner/WeeklyPlanner';
 import { Leaf } from 'lucide-react';
 
 function App() {
   const { profile, isSetupComplete } = useUserStore();
+  const { currentMealPlan } = useMealPlanStore();
+  const [currentView, setCurrentView] = useState<'dashboard' | 'meal-plan'>('dashboard');
 
   // Show setup if user hasn't completed onboarding
   if (!profile || !isSetupComplete()) {
@@ -28,16 +31,47 @@ function App() {
     );
   }
 
+  const handleViewMealPlan = () => {
+    setCurrentView('meal-plan');
+  };
+
+  const handleBackToDashboard = () => {
+    setCurrentView('dashboard');
+  };
+
+  const renderCurrentView = () => {
+    switch (currentView) {
+      case 'meal-plan':
+        return <WeeklyPlanner onBack={handleBackToDashboard} />;
+      case 'dashboard':
+      default:
+        return <Dashboard onViewMealPlan={handleViewMealPlan} />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <Leaf className="h-6 w-6 text-primary-600 mr-2" />
-              <span className="text-xl font-bold text-gray-900">Eat Mor Vegetables</span>
+              <button
+                onClick={handleBackToDashboard}
+                className="flex items-center hover:bg-gray-50 rounded-lg p-1 -ml-1"
+              >
+                <Leaf className="h-6 w-6 text-primary-600 mr-2" />
+                <span className="text-xl font-bold text-gray-900">Eat Mor Vegetables</span>
+              </button>
             </div>
             <div className="flex items-center space-x-4">
+              {currentMealPlan && (
+                <button
+                  onClick={handleViewMealPlan}
+                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  View Current Plan
+                </button>
+              )}
               <span className="text-sm text-gray-600">
                 Budget: ${profile.weeklyBudget}/week
               </span>
@@ -50,11 +84,7 @@ function App() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/setup" element={<QuickSetup />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {renderCurrentView()}
       </main>
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useUserStore } from '../../store/userStore';
+import { useMealPlanStore } from '../../store/mealPlanStore';
 import { recipeService } from '../../services/recipeService';
 import { Recipe } from '../../types/Recipe';
 import { 
@@ -11,14 +12,34 @@ import {
   Plus, 
   Sparkles,
   Heart,
-  Filter
+  Filter,
+  X,
+  Trash2,
+  RefreshCw,
+  Settings
 } from 'lucide-react';
 
-const Dashboard: React.FC = () => {
-  const { profile } = useUserStore();
+interface DashboardProps {
+  onViewMealPlan?: () => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
+  const { profile, resetProfile } = useUserStore();
+  const { 
+    selectedRecipes, 
+    addRecipeToSelection, 
+    removeRecipeFromSelection,
+    createMealPlan,
+    deleteMealPlan,
+    currentMealPlan,
+    isCreating,
+    clearSelectedRecipes,
+    resetAllData
+  } = useMealPlanStore();
   const [recommendations, setRecommendations] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRecipes, setSelectedRecipes] = useState<Recipe[]>([]);
+  const [showCreateMealPlan, setShowCreateMealPlan] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
     const loadRecommendations = async () => {
@@ -39,8 +60,49 @@ const Dashboard: React.FC = () => {
   }, [profile]);
 
   const handleAddToMealPlan = (recipe: Recipe) => {
-    setSelectedRecipes(prev => [...prev, recipe]);
-    // TODO: Add to actual meal plan store
+    addRecipeToSelection(recipe);
+  };
+
+  const handleCreateMealPlan = async (name: string, startDate: string, useRecommendations: boolean = false) => {
+    if (!profile) return;
+    
+    try {
+      let recipesToUse = selectedRecipes;
+      
+      // If user wants to use recommendations, automatically select top recipes
+      if (useRecommendations && recommendations.length > 0) {
+        // Clear current selection and use top recommendations
+        clearSelectedRecipes();
+        // Select top 10-12 recipes to fill the week
+        recipesToUse = recommendations.slice(0, 12);
+        // Add them to selection temporarily
+        recipesToUse.forEach(recipe => addRecipeToSelection(recipe));
+      }
+      
+      await createMealPlan(name, startDate, profile.weeklyBudget);
+      setShowCreateMealPlan(false);
+      onViewMealPlan?.();
+    } catch (error) {
+      console.error('Error creating meal plan:', error);
+    }
+  };
+
+  const handleRemoveFromSelection = (recipeId: string) => {
+    removeRecipeFromSelection(recipeId);
+  };
+
+  const handleDeleteMealPlan = () => {
+    if (currentMealPlan) {
+      deleteMealPlan(currentMealPlan.id);
+    }
+  };
+
+  const handleResetAll = () => {
+    resetAllData();
+    resetProfile();
+    setShowResetConfirm(false);
+    // Force page reload to ensure clean state
+    window.location.reload();
   };
 
   const getBudgetPerMeal = () => {
@@ -55,6 +117,181 @@ const Dashboard: React.FC = () => {
       case '1hour': return 'Elaborate meals';
       default: return 'Flexible';
     }
+  };
+
+  const CreateMealPlanModal: React.FC = () => {
+    const [mealPlanName, setMealPlanName] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [useAutoGeneration, setUseAutoGeneration] = useState(true);
+
+    const handleSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (mealPlanName && startDate) {
+        handleCreateMealPlan(mealPlanName, startDate, useAutoGeneration);
+      }
+    };
+
+    if (!showCreateMealPlan) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Create Meal Plan</h2>
+            <button
+              onClick={() => setShowCreateMealPlan(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Meal Plan Name
+              </label>
+              <input
+                type="text"
+                value={mealPlanName}
+                onChange={(e) => setMealPlanName(e.target.value)}
+                className="input"
+                placeholder="e.g., This Week's Meals"
+                required
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Start Date
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="input"
+                min={new Date().toISOString().split('T')[0]}
+                required
+              />
+            </div>
+
+            <div className="border rounded-lg p-4">
+              <h3 className="font-medium text-gray-900 mb-3">Meal Selection</h3>
+              
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="mealSelection"
+                    checked={useAutoGeneration}
+                    onChange={() => setUseAutoGeneration(true)}
+                    className="mr-3"
+                  />
+                  <div>
+                    <span className="font-medium text-gray-900">Auto-generate from recommendations</span>
+                    <p className="text-sm text-gray-600">
+                      Automatically select {recommendations.length > 0 ? Math.min(12, recommendations.length) : 12} recipes based on your preferences
+                    </p>
+                  </div>
+                </label>
+                
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="mealSelection"
+                    checked={!useAutoGeneration}
+                    onChange={() => setUseAutoGeneration(false)}
+                    className="mr-3"
+                  />
+                  <div>
+                    <span className="font-medium text-gray-900">Use selected recipes</span>
+                    <p className="text-sm text-gray-600">
+                      Use the {selectedRecipes.length} recipes you've manually selected
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-600">
+                Budget: ${profile?.weeklyBudget}/week
+              </p>
+              <p className="text-sm text-gray-600">
+                Household: {profile?.householdSize} people
+              </p>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowCreateMealPlan(false)}
+                className="flex-1 btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreating || !mealPlanName || !startDate}
+                className="flex-1 btn-primary disabled:opacity-50"
+              >
+                {isCreating ? 'Creating...' : 'Create Meal Plan'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  const ResetConfirmModal: React.FC = () => {
+    if (!showResetConfirm) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Reset All Data</h2>
+            <button
+              onClick={() => setShowResetConfirm(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            <p className="text-gray-600">
+              This will permanently delete all your data including:
+            </p>
+            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+              <li>Your profile and preferences</li>
+              <li>All meal plans</li>
+              <li>Selected recipes</li>
+              <li>Grocery lists</li>
+            </ul>
+            <p className="text-sm text-red-600 font-medium">
+              This action cannot be undone.
+            </p>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="flex-1 btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetAll}
+                className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+              >
+                Reset All Data
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const RecipeCard: React.FC<{ recipe: Recipe }> = ({ recipe }) => (
@@ -109,14 +346,14 @@ const Dashboard: React.FC = () => {
     icon: React.ReactNode; 
     color: string;
   }> = ({ title, value, description, icon, color }) => (
-    <div className={`card ${color}`}>
+    <div className="card">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600">{title}</p>
           <p className="text-2xl font-bold text-gray-900">{value}</p>
           <p className="text-sm text-gray-500">{description}</p>
         </div>
-        <div className="text-primary-600">
+        <div className={color}>
           {icon}
         </div>
       </div>
@@ -128,191 +365,166 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      {/* Header with Controls */}
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Welcome back! 👋
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-600 mt-1">
-            Let's plan some delicious and budget-friendly meals
+            Welcome back! Here are your personalized meal recommendations.
           </p>
         </div>
-        <div className="flex space-x-4">
-          <button className="btn-outline">
-            <Calendar className="h-4 w-4 mr-2" />
-            View Meal Plan
-          </button>
-          <button className="btn-primary">
-            <Plus className="h-4 w-4 mr-2" />
-            New Meal Plan
+        
+        <div className="flex space-x-3">
+          {currentMealPlan && (
+            <button
+              onClick={handleDeleteMealPlan}
+              className="btn-outline text-red-600 border-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Meal Plan
+            </button>
+          )}
+          <button
+            onClick={() => setShowResetConfirm(true)}
+            className="btn-outline text-gray-600"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Reset All
           </button>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatsCard
           title="Weekly Budget"
-          value={`$${profile.weeklyBudget}`}
-          description="For groceries & meals"
-          icon={<DollarSign className="h-8 w-8" />}
-          color="bg-green-50"
+          value={`$${profile?.weeklyBudget}`}
+          description="Available for meals"
+          icon={<DollarSign className="h-6 w-6" />}
+          color="text-green-600"
         />
         <StatsCard
           title="Household Size"
-          value={`${profile.householdSize}`}
+          value={`${profile?.householdSize}`}
           description="People to feed"
-          icon={<Calendar className="h-8 w-8" />}
-          color="bg-blue-50"
+          icon={<div className="text-blue-600">👥</div>}
+          color="text-blue-600"
         />
         <StatsCard
           title="Cooking Time"
-          value={getTimeDescription(profile.cookingTime)}
-          description="Available for cooking"
-          icon={<Clock className="h-8 w-8" />}
-          color="bg-purple-50"
+          value={getTimeDescription(profile?.cookingTime || '')}
+          description="Preferred duration"
+          icon={<Clock className="h-6 w-6" />}
+          color="text-purple-600"
+        />
+        <StatsCard
+          title="Skill Level"
+          value={profile?.skillLevel || 'Beginner'}
+          description="Cooking experience"
+          icon={<ChefHat className="h-6 w-6" />}
+          color="text-orange-600"
         />
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <button className="card hover:shadow-md transition-shadow text-left">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-primary-100 rounded-lg">
-              <Calendar className="h-6 w-6 text-primary-600" />
+      <div className="card">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <button
+            onClick={() => setShowCreateMealPlan(true)}
+            className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-colors"
+          >
+            <div className="text-center">
+              <Plus className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="font-medium text-gray-900">Create Meal Plan</p>
+              <p className="text-sm text-gray-600">Start planning your week</p>
             </div>
-            <div>
-              <h3 className="font-semibold">Plan This Week</h3>
-              <p className="text-sm text-gray-600">Create meal schedule</p>
+          </button>
+          
+          <button className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-colors">
+            <div className="text-center">
+              <ShoppingCart className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="font-medium text-gray-900">Browse Recipes</p>
+              <p className="text-sm text-gray-600">Discover new meals</p>
             </div>
-          </div>
-        </button>
-        
-        <button className="card hover:shadow-md transition-shadow text-left">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <ShoppingCart className="h-6 w-6 text-green-600" />
+          </button>
+          
+          <button className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-colors">
+            <div className="text-center">
+              <Calendar className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="font-medium text-gray-900">View Calendar</p>
+              <p className="text-sm text-gray-600">See your meal schedule</p>
             </div>
-            <div>
-              <h3 className="font-semibold">Grocery List</h3>
-              <p className="text-sm text-gray-600">Generate shopping list</p>
-            </div>
-          </div>
-        </button>
-        
-        <button className="card hover:shadow-md transition-shadow text-left">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <Sparkles className="h-6 w-6 text-yellow-600" />
-            </div>
-            <div>
-              <h3 className="font-semibold">Get Inspired</h3>
-              <p className="text-sm text-gray-600">Discover new recipes</p>
-            </div>
-          </div>
-        </button>
-        
-        <button className="card hover:shadow-md transition-shadow text-left">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <DollarSign className="h-6 w-6 text-purple-600" />
-            </div>
-            <div>
-              <h3 className="font-semibold">Budget Tracker</h3>
-              <p className="text-sm text-gray-600">Monitor spending</p>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      {/* Recipe Recommendations */}
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">
-              Perfect for You
-            </h2>
-            <p className="text-gray-600">
-              Based on your preferences and budget (${getBudgetPerMeal().toFixed(2)}/meal)
-            </p>
-          </div>
-          <div className="flex space-x-4">
-            <button className="btn-outline">
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </button>
-            <button className="btn-outline">
-              <Sparkles className="h-4 w-4 mr-2" />
-              Refresh
-            </button>
-          </div>
+          </button>
         </div>
-
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="card animate-pulse">
-                <div className="bg-gray-200 h-48 rounded-lg mb-4"></div>
-                <div className="space-y-2">
-                  <div className="bg-gray-200 h-4 rounded w-3/4"></div>
-                  <div className="bg-gray-200 h-3 rounded w-full"></div>
-                  <div className="bg-gray-200 h-3 rounded w-2/3"></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : recommendations.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {recommendations.map((recipe) => (
-              <RecipeCard key={recipe.id} recipe={recipe} />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <ChefHat className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No recommendations yet
-            </h3>
-            <p className="text-gray-600 mb-4">
-              We're having trouble finding recipes that match your preferences.
-            </p>
-            <button className="btn-primary">
-              <Sparkles className="h-4 w-4 mr-2" />
-              Try Different Filters
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Selected Recipes */}
       {selectedRecipes.length > 0 && (
         <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Added to Meal Plan ({selectedRecipes.length})
-            </h3>
-            <button className="btn-primary">
-              <Calendar className="h-4 w-4 mr-2" />
-              Create Meal Plan
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-900">
+              Selected Recipes ({selectedRecipes.length})
+            </h2>
+            <button
+              onClick={clearSelectedRecipes}
+              className="text-sm text-red-600 hover:text-red-700"
+            >
+              Clear All
             </button>
           </div>
-          <div className="flex space-x-4 overflow-x-auto">
-            {selectedRecipes.map((recipe, index) => (
-              <div key={index} className="flex-shrink-0 w-48">
-                <img
-                  src={recipe.image}
-                  alt={recipe.name}
-                  className="w-full h-24 object-cover rounded-lg mb-2"
-                />
-                <h4 className="font-medium text-sm text-gray-900">{recipe.name}</h4>
-                <p className="text-xs text-gray-500">${recipe.costPerServing?.toFixed(2)}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {selectedRecipes.map(recipe => (
+              <div key={recipe.id} className="relative">
+                <RecipeCard recipe={recipe} />
+                <button
+                  onClick={() => handleRemoveFromSelection(recipe.id)}
+                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Recommendations */}
+      <div className="card">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-gray-900 flex items-center">
+            <Sparkles className="h-6 w-6 text-yellow-500 mr-2" />
+            Recommended for You
+          </h2>
+          <button className="btn-outline">
+            <Filter className="h-4 w-4 mr-2" />
+            Filter
+          </button>
+        </div>
+        
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="animate-pulse">
+                <div className="bg-gray-200 h-48 rounded-lg mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recommendations.map(recipe => (
+              <RecipeCard key={recipe.id} recipe={recipe} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      <CreateMealPlanModal />
+      <ResetConfirmModal />
     </div>
   );
 };

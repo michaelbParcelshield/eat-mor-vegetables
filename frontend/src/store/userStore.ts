@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { MVPUserProfile, SetupProgress } from '../types/User';
+import { MVPUserProfile, SetupProgress, SetupStep } from '../types/User';
 import { STORAGE_KEYS } from '../hooks/useLocalStorage';
 
 interface UserState {
@@ -17,6 +17,7 @@ interface UserState {
   setProfile: (profile: MVPUserProfile) => void;
   updateProfile: (updates: Partial<MVPUserProfile>) => void;
   clearProfile: () => void;
+  resetProfile: () => void;
   
   // Setup actions
   setSetupProgress: (progress: SetupProgress) => void;
@@ -70,6 +71,13 @@ export const useUserStore = create<UserState>()(
         });
       },
 
+      resetProfile: () => {
+        set({ 
+          profile: null,
+          setupProgress: initialSetupProgress
+        });
+      },
+
       setSetupProgress: (progress: SetupProgress) => {
         set({ setupProgress: progress });
       },
@@ -78,11 +86,11 @@ export const useUserStore = create<UserState>()(
         const { setupProgress } = get();
         const newCompletedSteps = [...setupProgress.completedSteps];
         
-        if (!newCompletedSteps.includes(step as any)) {
-          newCompletedSteps.push(step as any);
+        if (!newCompletedSteps.includes(step as SetupStep)) {
+          newCompletedSteps.push(step as SetupStep);
         }
         
-        const nextStep = Math.min(step + 1, 3);
+        const nextStep = Math.min(step + 1, 3) as SetupStep;
         const isComplete = newCompletedSteps.length === 3;
         
         set({
