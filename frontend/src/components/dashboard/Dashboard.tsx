@@ -17,7 +17,6 @@ import {
   X,
   Trash2,
   RefreshCw,
-  Settings,
   Phone
 } from 'lucide-react';
 
@@ -135,11 +134,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
     setShowResetConfirm(false);
     // Force page reload to ensure clean state
     window.location.reload();
-  };
-
-  const getBudgetPerMeal = () => {
-    if (!profile) return 0;
-    return profile.weeklyBudget / 21; // 3 meals * 7 days
   };
 
   const getTimeDescription = (cookingTime: string) => {

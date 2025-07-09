@@ -196,7 +196,7 @@ class RecipeService {
   }
 
   // Get recipes by category
-  async getRecipesByCategory(category: string): Promise<Recipe[]> {
+  async getRecipesByCategory(category: string, limit: number = 25): Promise<Recipe[]> {
     try {
       const data: TheMealDBResponse = await this.fetchFromAPI(`/filter.php?c=${category}`);
       
@@ -204,7 +204,7 @@ class RecipeService {
       
       // TheMealDB filter endpoint only returns basic info, need to fetch full recipes
       const detailedRecipes = await Promise.all(
-        data.meals.slice(0, 10).map(async (meal) => {
+        data.meals.slice(0, limit).map(async (meal) => {
           const detailData: TheMealDBResponse = await this.fetchFromAPI(`/lookup.php?i=${meal.idMeal}`);
           return detailData.meals ? convertTheMealDBRecipe(detailData.meals[0]) : null;
         })
@@ -218,7 +218,7 @@ class RecipeService {
   }
 
   // Get recipes by area/cuisine
-  async getRecipesByArea(area: string): Promise<Recipe[]> {
+  async getRecipesByArea(area: string, limit: number = 30): Promise<Recipe[]> {
     try {
       const data: TheMealDBResponse = await this.fetchFromAPI(`/filter.php?a=${encodeURIComponent(area)}`);
       
@@ -226,7 +226,7 @@ class RecipeService {
       
       // TheMealDB filter endpoint only returns basic info, need to fetch full recipes
       const detailedRecipes = await Promise.all(
-        data.meals.slice(0, 8).map(async (meal) => {
+        data.meals.slice(0, limit).map(async (meal) => {
           const detailData: TheMealDBResponse = await this.fetchFromAPI(`/lookup.php?i=${meal.idMeal}`);
           return detailData.meals ? convertTheMealDBRecipe(detailData.meals[0]) : null;
         })
@@ -237,6 +237,92 @@ class RecipeService {
       console.error('Error fetching recipes by area:', error);
       return [];
     }
+  }
+
+  // Get comprehensive recipes from a specific cuisine using multiple strategies
+  async getComprehensiveRecipesByCuisine(cuisine: string): Promise<Recipe[]> {
+    try {
+      console.log(`Getting comprehensive recipes for ${cuisine} cuisine...`);
+      let allRecipes: Recipe[] = [];
+
+      // 1. Get recipes by area (main approach)
+      const areaRecipes = await this.getRecipesByArea(cuisine, 40);
+      allRecipes.push(...areaRecipes);
+      console.log(`Added ${areaRecipes.length} recipes from ${cuisine} area`);
+
+      // 2. Search for cuisine-specific terms
+      const cuisineTerms = this.getCuisineSearchTerms(cuisine);
+      for (const term of cuisineTerms) {
+        try {
+          const searchResult = await this.searchRecipes({ query: term, limit: 15 });
+          const cuisineFiltered = searchResult.recipes.filter(recipe => 
+            recipe.area?.toLowerCase() === cuisine.toLowerCase() || 
+            recipe.name.toLowerCase().includes(term.toLowerCase())
+          );
+          allRecipes.push(...cuisineFiltered);
+          console.log(`Added ${cuisineFiltered.length} recipes from search term "${term}"`);
+        } catch (error) {
+          console.log(`Could not search for term "${term}":`, error);
+        }
+      }
+
+      // 3. Get random recipes and filter for the cuisine
+      const randomRecipes = await this.getRandomRecipes(100);
+      const cuisineRandomRecipes = randomRecipes.filter(recipe => 
+        recipe.area?.toLowerCase() === cuisine.toLowerCase()
+      );
+      allRecipes.push(...cuisineRandomRecipes);
+      console.log(`Added ${cuisineRandomRecipes.length} random ${cuisine} recipes`);
+
+      // Remove duplicates
+      const uniqueRecipes = allRecipes.filter((recipe, index, self) => 
+        index === self.findIndex(r => r.id === recipe.id)
+      );
+
+      console.log(`Total comprehensive ${cuisine} recipes: ${uniqueRecipes.length}`);
+      return uniqueRecipes;
+    } catch (error) {
+      console.error(`Error getting comprehensive recipes for ${cuisine}:`, error);
+      return [];
+    }
+  }
+
+  // Get search terms for different cuisines
+  private getCuisineSearchTerms(cuisine: string): string[] {
+    const searchTerms: Record<string, string[]> = {
+      'Mexican': ['taco', 'burrito', 'quesadilla', 'enchilada', 'salsa', 'guacamole', 'tortilla', 'jalapeño', 'chile', 'masa'],
+      'Italian': ['pasta', 'pizza', 'risotto', 'lasagna', 'gnocchi', 'carbonara', 'bolognese', 'pesto', 'tiramisu', 'marinara'],
+      'Chinese': ['stir fry', 'noodles', 'dumpling', 'wonton', 'fried rice', 'kung pao', 'chow mein', 'spring roll', 'sweet and sour'],
+      'Indian': ['curry', 'tandoori', 'masala', 'biryani', 'samosa', 'naan', 'dal', 'vindaloo', 'tikka', 'chapati'],
+      'Thai': ['pad thai', 'tom yum', 'green curry', 'red curry', 'som tam', 'mango sticky', 'thai basil', 'coconut milk'],
+      'Japanese': ['sushi', 'ramen', 'tempura', 'miso', 'teriyaki', 'udon', 'katsu', 'dango', 'mochi', 'yakitori'],
+      'French': ['croissant', 'baguette', 'coq au vin', 'ratatouille', 'bouillabaisse', 'crème brûlée', 'quiche', 'cassoulet'],
+      'Greek': ['moussaka', 'souvlaki', 'tzatziki', 'spanakopita', 'gyros', 'feta', 'olives', 'baklava', 'dolmades'],
+      'Spanish': ['paella', 'tapas', 'gazpacho', 'tortilla española', 'churros', 'jamón', 'manchego', 'sangria'],
+      'American': ['burger', 'bbq', 'mac and cheese', 'fried chicken', 'apple pie', 'pancakes', 'hot dog', 'clam chowder'],
+      'British': ['fish and chips', 'shepherd\'s pie', 'bangers and mash', 'beef wellington', 'spotted dick', 'bubble and squeak'],
+      'Lebanese': ['hummus', 'tabbouleh', 'kibbeh', 'fattoush', 'shawarma', 'baklava', 'labneh', 'manakish'],
+      'Moroccan': ['tagine', 'couscous', 'pastilla', 'harira', 'mint tea', 'preserved lemon', 'ras el hanout'],
+      'Turkish': ['kebab', 'döner', 'baklava', 'turkish delight', 'börek', 'meze', 'pilaf', 'köfte'],
+      'Vietnamese': ['pho', 'banh mi', 'spring rolls', 'vietnamese coffee', 'bun bo hue', 'bánh xèo', 'nuoc mam'],
+      'Korean': ['kimchi', 'bulgogi', 'bibimbap', 'korean bbq', 'japchae', 'tteokbokki', 'banchan', 'gochujang'],
+      'Jamaican': ['jerk chicken', 'rice and peas', 'curry goat', 'ackee', 'plantain', 'patties', 'callaloo'],
+      'Russian': ['borscht', 'beef stroganoff', 'pelmeni', 'blini', 'caviar', 'vodka', 'cabbage rolls'],
+      'Polish': ['pierogi', 'kielbasa', 'bigos', 'kotlet schabowy', 'zurek', 'oscypek', 'makowiec'],
+      'Portuguese': ['pastéis de nata', 'bacalhau', 'francesinha', 'caldo verde', 'bifana', 'port wine'],
+      'Canadian': ['poutine', 'tourtière', 'butter tarts', 'maple syrup', 'bannock', 'split pea soup'],
+      'Malaysian': ['nasi lemak', 'laksa', 'char kway teow', 'rendang', 'satay', 'hainanese chicken', 'cendol'],
+      'Egyptian': ['koshari', 'ful medames', 'molokhia', 'mahshi', 'basbousa', 'ta\'meya', 'dukkah'],
+      'Croatian': ['peka', 'ćevapi', 'strukli', 'black risotto', 'pašticada', 'fritule', 'kulen'],
+      'Dutch': ['stroopwafel', 'bitterballen', 'erwtensoep', 'oliebollen', 'stamppot', 'herring', 'gouda'],
+      'Filipino': ['adobo', 'lumpia', 'pancit', 'lechon', 'halo-halo', 'sinigang', 'sisig', 'kare-kare'],
+      'Tunisian': ['couscous', 'brik', 'harissa', 'mechouia', 'makroud', 'bambalouni', 'chorba'],
+      'Kenyan': ['ugali', 'nyama choma', 'sukuma wiki', 'samosa', 'mandazi', 'githeri', 'mutura'],
+      'Irish': ['colcannon', 'irish stew', 'soda bread', 'black pudding', 'boxty', 'guinness', 'coddle'],
+      'Ukrainian': ['borscht', 'varenyky', 'salo', 'holubtsi', 'deruny', 'syrniki', 'kutia']
+    };
+
+    return searchTerms[cuisine] || [cuisine.toLowerCase()];
   }
 
   // Get recipe recommendations based on user profile
@@ -257,16 +343,25 @@ class RecipeService {
       
       let allRecipes: Recipe[] = [];
       
-             // 1. First try to get recipes from preferred cuisines
+             // 1. First try to get comprehensive recipes from preferred cuisines
        if (userProfile.preferredCuisines && userProfile.preferredCuisines.length > 0) {
-         console.log('Getting recipes from preferred cuisines...');
+         console.log('Getting comprehensive recipes from preferred cuisines...');
          for (const cuisine of userProfile.preferredCuisines) {
            try {
-             const cuisineRecipes = await this.getRecipesByArea(cuisine);
+             // Use comprehensive method for preferred cuisines to get more recipes
+             const cuisineRecipes = await this.getComprehensiveRecipesByCuisine(cuisine);
              allRecipes.push(...cuisineRecipes);
-             console.log(`Added ${cuisineRecipes.length} recipes from ${cuisine} cuisine`);
+             console.log(`Added ${cuisineRecipes.length} comprehensive recipes from ${cuisine} cuisine`);
            } catch (error) {
-             console.log(`Could not get recipes for ${cuisine} cuisine:`, error);
+             console.log(`Could not get comprehensive recipes for ${cuisine} cuisine:`, error);
+             // Fallback to regular area search
+             try {
+               const fallbackRecipes = await this.getRecipesByArea(cuisine, 30);
+               allRecipes.push(...fallbackRecipes);
+               console.log(`Added ${fallbackRecipes.length} fallback recipes from ${cuisine} cuisine`);
+             } catch (fallbackError) {
+               console.log(`Could not get fallback recipes for ${cuisine} cuisine:`, fallbackError);
+             }
            }
          }
        }
@@ -276,7 +371,7 @@ class RecipeService {
        console.log('Getting breakfast-friendly recipes...');
        for (const category of breakfastCategories) {
          try {
-           const categoryRecipes = await this.getRecipesByCategory(category);
+           const categoryRecipes = await this.getRecipesByCategory(category, 20);
            allRecipes.push(...categoryRecipes);
            console.log(`Added ${categoryRecipes.length} recipes from ${category} category`);
          } catch (error) {
@@ -289,7 +384,7 @@ class RecipeService {
        console.log('Getting recipes from popular categories...');
        for (const category of popularCategories) {
          try {
-           const categoryRecipes = await this.getRecipesByCategory(category);
+           const categoryRecipes = await this.getRecipesByCategory(category, 20);
            allRecipes.push(...categoryRecipes);
            console.log(`Added ${categoryRecipes.length} recipes from ${category} category`);
          } catch (error) {
@@ -298,7 +393,7 @@ class RecipeService {
        }
        
        // 4. Add random recipes to expand the pool further
-       const randomRecipes = await this.getRandomRecipes(50);
+       const randomRecipes = await this.getRandomRecipes(100);
        allRecipes.push(...randomRecipes);
        console.log(`Added ${randomRecipes.length} random recipes`);
        console.log(`Total recipes pool: ${allRecipes.length} recipes`);
@@ -425,9 +520,16 @@ class RecipeService {
       });
       
              // Need at least 21 recipes for a full week (7 breakfast + 7 lunch + 7 dinner)
-       const recommendations = sortedRecipes.slice(0, Math.max(25, sortedRecipes.length));
+       // Return more recipes to ensure variety and fallback options
+       const recommendations = sortedRecipes.slice(0, Math.max(50, sortedRecipes.length));
        console.log('Final recommendations:', recommendations.map(r => ({ name: r.name, area: r.area, cost: r.costPerServing, category: r.category })));
        console.log(`Returning ${recommendations.length} recommendations for meal planning`);
+       
+       // If we still don't have enough recipes and user has restrictive preferences, 
+       // add a warning but still proceed
+       if (recommendations.length < 21 && userProfile.preferredCuisines && userProfile.preferredCuisines.length > 0) {
+         console.warn(`⚠️  Only ${recommendations.length} recipes available for preferred cuisines. Meal plan may have limited variety.`);
+       }
        
        return recommendations;
     } catch (error) {
