@@ -6,6 +6,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddFastEndpoints();
 builder.Services.AddAuthorization();
 
+// Add HttpClient for api.data.gov integration
+builder.Services.AddHttpClient();
+
 // Add health checks
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Application is running"))
@@ -22,6 +25,18 @@ builder.Services.AddHealthChecks()
         }
         
         return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Twilio configuration is valid");
+    })
+    .AddCheck("data-gov-config", () => 
+    {
+        var configuration = builder.Configuration;
+        var apiKey = Environment.GetEnvironmentVariable("DATA_GOV_API_KEY") ?? configuration["DataGov:ApiKey"];
+        
+        if (string.IsNullOrEmpty(apiKey) || apiKey == "DEMO_KEY")
+        {
+            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Degraded("Using DEMO_KEY for api.data.gov - consider getting a real API key");
+        }
+        
+        return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Data.gov API key is configured");
     });
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
