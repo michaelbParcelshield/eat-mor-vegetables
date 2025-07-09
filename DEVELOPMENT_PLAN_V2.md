@@ -1,4 +1,4 @@
-# 🍽️ Meal Planning MVP - "Eat Mor Vegetables"
+npm# 🍽️ Meal Planning MVP - "Eat Mor Vegetables"
 
 ## 🎯 Core Problem Statement
 People struggle to eat healthy, save money, and save time around meals. They waste food, make last-minute decisions, and either eat poorly or overspend on takeout.
