@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from "react";
 
 // Storage keys
 export const STORAGE_KEYS = {
-  USER_PROFILE: 'eatMorVegetables_userProfile',
-  MEAL_PLANS: 'eatMorVegetables_mealPlans',
-  RECIPE_CACHE: 'eatMorVegetables_recipeCache',
-  GROCERY_LISTS: 'eatMorVegetables_groceryLists',
-  SETUP_PROGRESS: 'eatMorVegetables_setupProgress',
+  USER_PROFILE: "eatMorVegetables_userProfile",
+  MEAL_PLANS: "eatMorVegetables_mealPlans",
+  RECIPE_CACHE: "eatMorVegetables_recipeCache",
+  GROCERY_LISTS: "eatMorVegetables_groceryLists",
+  SETUP_PROGRESS: "eatMorVegetables_setupProgress",
 } as const;
 
 type StorageKey = keyof typeof STORAGE_KEYS;
@@ -30,13 +30,17 @@ export function useLocalStorage<T>(
   const setValue = (value: T | ((val: T) => T)) => {
     try {
       // Allow value to be a function so we have the same API as useState
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      
+      const valueToStore =
+        value instanceof Function ? value(storedValue) : value;
+
       // Save state
       setStoredValue(valueToStore);
-      
+
       // Save to local storage
-      window.localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(valueToStore));
+      window.localStorage.setItem(
+        STORAGE_KEYS[key],
+        JSON.stringify(valueToStore)
+      );
     } catch (error) {
       console.error(`Error setting localStorage key "${key}":`, error);
     }
@@ -49,7 +53,7 @@ export function useLocalStorage<T>(
 export const storageUtils = {
   // Clear all app data
   clearAll: () => {
-    Object.values(STORAGE_KEYS).forEach(key => {
+    Object.values(STORAGE_KEYS).forEach((key) => {
       window.localStorage.removeItem(key);
     });
   },
@@ -97,7 +101,7 @@ export const storageUtils = {
   getStorageSize: (): number => {
     try {
       let total = 0;
-      Object.values(STORAGE_KEYS).forEach(key => {
+      Object.values(STORAGE_KEYS).forEach((key) => {
         const item = window.localStorage.getItem(key);
         if (item) {
           total += item.length;
@@ -105,8 +109,8 @@ export const storageUtils = {
       });
       return total;
     } catch (error) {
-      console.error('Error calculating storage size:', error);
+      console.error("Error calculating storage size:", error);
       return 0;
     }
-  }
-}; 
+  },
+};
