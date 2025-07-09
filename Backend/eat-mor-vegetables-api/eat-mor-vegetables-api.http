@@ -1,0 +1,6 @@
+@eat_mor_vegetables_api_HostAddress = http://localhost:5119
+
+GET {{eat_mor_vegetables_api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
