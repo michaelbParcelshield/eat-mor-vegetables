@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
 import { useMealPlanStore, mealPlanUtils } from '../../store/mealPlanStore';
-import { useUserStore } from '../../store/userStore';
 import { 
   Calendar, 
   ShoppingCart, 
   DollarSign, 
   Clock, 
-  ChefHat, 
   Plus, 
   ArrowLeft,
   Edit,
   Trash2
 } from 'lucide-react';
-import { Recipe } from '../../types/Recipe';
 import { MealSlot } from '../../types/MealPlan';
 
 interface WeeklyPlannerProps {
@@ -20,11 +17,9 @@ interface WeeklyPlannerProps {
 }
 
 const WeeklyPlanner: React.FC<WeeklyPlannerProps> = ({ onBack }) => {
-  const { profile } = useUserStore();
   const { 
     currentMealPlan, 
     generateGroceryList,
-    addRecipeToMealPlan,
     removeRecipeFromMealPlan 
   } = useMealPlanStore();
   const [showGroceryList, setShowGroceryList] = useState(false);
