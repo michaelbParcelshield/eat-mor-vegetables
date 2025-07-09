@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
-import { useUserStore } from './store/userStore';
-import { useMealPlanStore } from './store/mealPlanStore';
-import QuickSetup from './components/setup/QuickSetup';
-import Dashboard from './components/dashboard/Dashboard';
-import WeeklyPlanner from './components/planner/WeeklyPlanner';
-import { Leaf } from 'lucide-react';
+import { useState } from "react";
+import { useUserStore } from "./store/userStore";
+import { useMealPlanStore } from "./store/mealPlanStore";
+import QuickSetup from "./components/setup/QuickSetup";
+import Dashboard from "./components/dashboard/Dashboard";
+import WeeklyPlanner from "./components/planner/WeeklyPlanner";
+import { Leaf } from "lucide-react";
 
 function App() {
   const { profile, isSetupComplete } = useUserStore();
   const { currentMealPlan } = useMealPlanStore();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'meal-plan'>('dashboard');
+  const [currentView, setCurrentView] = useState<"dashboard" | "meal-plan">(
+    "dashboard"
+  );
 
   // Show setup if user hasn't completed onboarding
   if (!profile || !isSetupComplete()) {
@@ -19,7 +21,9 @@ function App() {
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
               <Leaf className="h-8 w-8 text-primary-600 mr-2" />
-              <h1 className="text-2xl font-bold text-gray-900">Eat Mor Vegetables</h1>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Eat Mor Vegetables
+              </h1>
             </div>
             <p className="text-gray-600">
               Make meal planning easy, budget-friendly, and time-saving
@@ -32,18 +36,18 @@ function App() {
   }
 
   const handleViewMealPlan = () => {
-    setCurrentView('meal-plan');
+    setCurrentView("meal-plan");
   };
 
   const handleBackToDashboard = () => {
-    setCurrentView('dashboard');
+    setCurrentView("dashboard");
   };
 
   const renderCurrentView = () => {
     switch (currentView) {
-      case 'meal-plan':
+      case "meal-plan":
         return <WeeklyPlanner onBack={handleBackToDashboard} />;
-      case 'dashboard':
+      case "dashboard":
       default:
         return <Dashboard onViewMealPlan={handleViewMealPlan} />;
     }
@@ -60,7 +64,9 @@ function App() {
                 className="flex items-center hover:bg-gray-50 rounded-lg p-1 -ml-1"
               >
                 <Leaf className="h-6 w-6 text-primary-600 mr-2" />
-                <span className="text-xl font-bold text-gray-900">Eat Mor Vegetables</span>
+                <span className="text-xl font-bold text-gray-900">
+                  Eat Mor Vegetables
+                </span>
               </button>
             </div>
             <div className="flex items-center space-x-4">
@@ -90,4 +96,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;
