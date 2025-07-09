@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { WeeklyMealPlan, DayPlan, MealSlot, GroceryList, GroceryItem, DEFAULT_GROCERY_CATEGORIES } from '../types/MealPlan';
+import { WeeklyMealPlan, DayPlan, GroceryList, GroceryItem, DEFAULT_GROCERY_CATEGORIES } from '../types/MealPlan';
 import { Recipe } from '../types/Recipe';
 import { STORAGE_KEYS } from '../hooks/useLocalStorage';
 
