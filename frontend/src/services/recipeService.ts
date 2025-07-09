@@ -217,48 +217,219 @@ class RecipeService {
     }
   }
 
+  // Get recipes by area/cuisine
+  async getRecipesByArea(area: string): Promise<Recipe[]> {
+    try {
+      const data: TheMealDBResponse = await this.fetchFromAPI(`/filter.php?a=${encodeURIComponent(area)}`);
+      
+      if (!data.meals) return [];
+      
+      // TheMealDB filter endpoint only returns basic info, need to fetch full recipes
+      const detailedRecipes = await Promise.all(
+        data.meals.slice(0, 8).map(async (meal) => {
+          const detailData: TheMealDBResponse = await this.fetchFromAPI(`/lookup.php?i=${meal.idMeal}`);
+          return detailData.meals ? convertTheMealDBRecipe(detailData.meals[0]) : null;
+        })
+      );
+      
+      return detailedRecipes.filter(Boolean) as Recipe[];
+    } catch (error) {
+      console.error('Error fetching recipes by area:', error);
+      return [];
+    }
+  }
+
   // Get recipe recommendations based on user profile
   async getRecommendations(userProfile: MVPUserProfile): Promise<Recipe[]> {
     try {
-      // Get recipes based on user preferences
+      console.log('=== RECOMMENDATION ALGORITHM ===');
+      console.log('User profile:', userProfile);
+      
       const maxCookTime = userProfile.cookingTime === "15min" ? 15 : 
                          userProfile.cookingTime === "30min" ? 30 : 60;
+      const maxCostPerServing = userProfile.weeklyBudget / 21; // 3 meals/day * 7 days
       
-      // Start with random recipes
-      const randomRecipes = await this.getRandomRecipes(20);
+      console.log('Max cook time:', maxCookTime, 'minutes');
+      console.log('Max cost per serving:', maxCostPerServing);
+      console.log('Preferred cuisines:', userProfile.preferredCuisines);
+      console.log('Allergies:', userProfile.allergies);
+      console.log('Disliked foods:', userProfile.dislikedFoods);
       
-      // Filter based on user constraints
-      const filteredRecipes = randomRecipes.filter(recipe => {
-        // Filter by cooking time
-        if (recipe.totalTime > maxCookTime) return false;
+      let allRecipes: Recipe[] = [];
+      
+             // 1. First try to get recipes from preferred cuisines
+       if (userProfile.preferredCuisines && userProfile.preferredCuisines.length > 0) {
+         console.log('Getting recipes from preferred cuisines...');
+         for (const cuisine of userProfile.preferredCuisines) {
+           try {
+             const cuisineRecipes = await this.getRecipesByArea(cuisine);
+             allRecipes.push(...cuisineRecipes);
+             console.log(`Added ${cuisineRecipes.length} recipes from ${cuisine} cuisine`);
+           } catch (error) {
+             console.log(`Could not get recipes for ${cuisine} cuisine:`, error);
+           }
+         }
+       }
+       
+       // 2. Add breakfast-friendly recipes
+       const breakfastCategories = ['Breakfast', 'Dessert', 'Miscellaneous'];
+       console.log('Getting breakfast-friendly recipes...');
+       for (const category of breakfastCategories) {
+         try {
+           const categoryRecipes = await this.getRecipesByCategory(category);
+           allRecipes.push(...categoryRecipes);
+           console.log(`Added ${categoryRecipes.length} recipes from ${category} category`);
+         } catch (error) {
+           console.log(`Could not get recipes for ${category} category:`, error);
+         }
+       }
+       
+       // 3. Add recipes from popular categories to expand the pool
+       const popularCategories = ['Chicken', 'Vegetarian', 'Pasta', 'Seafood', 'Beef', 'Pork'];
+       console.log('Getting recipes from popular categories...');
+       for (const category of popularCategories) {
+         try {
+           const categoryRecipes = await this.getRecipesByCategory(category);
+           allRecipes.push(...categoryRecipes);
+           console.log(`Added ${categoryRecipes.length} recipes from ${category} category`);
+         } catch (error) {
+           console.log(`Could not get recipes for ${category} category:`, error);
+         }
+       }
+       
+       // 4. Add random recipes to expand the pool further
+       const randomRecipes = await this.getRandomRecipes(50);
+       allRecipes.push(...randomRecipes);
+       console.log(`Added ${randomRecipes.length} random recipes`);
+       console.log(`Total recipes pool: ${allRecipes.length} recipes`);
+      
+      // 3. Remove duplicates
+      const uniqueRecipes = allRecipes.filter((recipe, index, self) => 
+        index === self.findIndex(r => r.id === recipe.id)
+      );
+      console.log(`After removing duplicates: ${uniqueRecipes.length} recipes`);
+      
+             // 4. Filter based on user constraints (with fallback flexibility)
+       let filteredRecipes = uniqueRecipes.filter(recipe => {
+         // STRICT filtering first
+         
+         // Filter by allergies (STRICT - never compromise on safety)
+         const hasAllergy = userProfile.allergies.some(allergy => 
+           recipe.ingredients.some(ingredient => 
+             ingredient.name.toLowerCase().includes(allergy.toLowerCase())
+           ) || recipe.name.toLowerCase().includes(allergy.toLowerCase())
+         );
+         if (hasAllergy) {
+           console.log(`Filtered out ${recipe.name} - contains allergen`);
+           return false;
+         }
+         
+         return true;
+       });
+       
+       console.log(`After allergy filtering: ${filteredRecipes.length} recipes`);
+       
+       // If we have very few recipes after allergy filtering, be less strict on other criteria
+       const needsMoreRecipes = filteredRecipes.length < 20;
+       
+       if (!needsMoreRecipes) {
+         // Apply all other filters normally
+         filteredRecipes = filteredRecipes.filter(recipe => {
+           // Filter by cooking time
+           if (recipe.totalTime > maxCookTime) {
+             console.log(`Filtered out ${recipe.name} - too long to cook (${recipe.totalTime}m > ${maxCookTime}m)`);
+             return false;
+           }
+           
+           // Filter by difficulty
+           if (userProfile.skillLevel === "beginner" && recipe.difficulty !== "beginner") {
+             console.log(`Filtered out ${recipe.name} - too difficult (${recipe.difficulty} > beginner)`);
+             return false;
+           }
+           if (userProfile.skillLevel === "intermediate" && recipe.difficulty === "advanced") {
+             console.log(`Filtered out ${recipe.name} - too difficult (${recipe.difficulty} > intermediate)`);
+             return false;
+           }
+           
+           // Filter by budget (cost per serving)
+           if (recipe.costPerServing && recipe.costPerServing > maxCostPerServing) {
+             console.log(`Filtered out ${recipe.name} - too expensive ($${recipe.costPerServing} > $${maxCostPerServing})`);
+             return false;
+           }
+           
+           // Filter by dislikes
+           const hasDislikedFood = userProfile.dislikedFoods.some(dislike => 
+             recipe.ingredients.some(ingredient => 
+               ingredient.name.toLowerCase().includes(dislike.toLowerCase())
+             ) || recipe.name.toLowerCase().includes(dislike.toLowerCase()) ||
+             recipe.category.toLowerCase().includes(dislike.toLowerCase())
+           );
+           if (hasDislikedFood) {
+             console.log(`Filtered out ${recipe.name} - contains disliked food`);
+             return false;
+           }
+           
+           return true;
+         });
+       } else {
+         console.log('⚠️  Very few recipes after allergy filtering. Being more flexible with other criteria...');
+         
+         // Apply more lenient filtering
+         filteredRecipes = filteredRecipes.filter(recipe => {
+           // Be more lenient with cooking time (add 50% buffer)
+           const flexibleMaxCookTime = maxCookTime * 1.5;
+           if (recipe.totalTime > flexibleMaxCookTime) {
+             console.log(`Filtered out ${recipe.name} - too long to cook (${recipe.totalTime}m > ${flexibleMaxCookTime}m) [lenient]`);
+             return false;
+           }
+           
+           // Be more lenient with difficulty (beginners can try intermediate)
+           if (userProfile.skillLevel === "beginner" && recipe.difficulty === "advanced") {
+             console.log(`Filtered out ${recipe.name} - too difficult (advanced for beginner) [lenient]`);
+             return false;
+           }
+           
+           // Be more lenient with budget (add 25% buffer)
+           const flexibleMaxCost = maxCostPerServing * 1.25;
+           if (recipe.costPerServing && recipe.costPerServing > flexibleMaxCost) {
+             console.log(`Filtered out ${recipe.name} - too expensive ($${recipe.costPerServing} > $${flexibleMaxCost}) [lenient]`);
+             return false;
+           }
+           
+           // Still filter strong dislikes but be more forgiving
+           const hasStrongDislike = userProfile.dislikedFoods.some(dislike => 
+             recipe.name.toLowerCase().includes(dislike.toLowerCase()) ||
+             recipe.category.toLowerCase().includes(dislike.toLowerCase())
+           );
+           if (hasStrongDislike) {
+             console.log(`Filtered out ${recipe.name} - strong dislike match [lenient]`);
+             return false;
+           }
+           
+           return true;
+         });
+       }
+      
+      console.log(`Final filtered recipes: ${filteredRecipes.length} recipes`);
+      
+      // 5. Prioritize preferred cuisines at the top
+      const sortedRecipes = filteredRecipes.sort((a, b) => {
+        const aIsPreferred = userProfile.preferredCuisines?.includes(a.area || '') || false;
+        const bIsPreferred = userProfile.preferredCuisines?.includes(b.area || '') || false;
         
-        // Filter by difficulty
-        if (userProfile.skillLevel === "beginner" && recipe.difficulty !== "beginner") return false;
-        if (userProfile.skillLevel === "intermediate" && recipe.difficulty === "advanced") return false;
+        if (aIsPreferred && !bIsPreferred) return -1;
+        if (!aIsPreferred && bIsPreferred) return 1;
         
-        // Filter by budget (cost per serving)
-        const maxCostPerServing = userProfile.weeklyBudget / 21; // 3 meals/day * 7 days
-        if (recipe.costPerServing && recipe.costPerServing > maxCostPerServing) return false;
-        
-        // Filter by allergies and dislikes
-        const hasAllergy = userProfile.allergies.some(allergy => 
-          recipe.ingredients.some(ingredient => 
-            ingredient.name.toLowerCase().includes(allergy.toLowerCase())
-          )
-        );
-        if (hasAllergy) return false;
-        
-        const hasDislikedFood = userProfile.dislikedFoods.some(dislike => 
-          recipe.ingredients.some(ingredient => 
-            ingredient.name.toLowerCase().includes(dislike.toLowerCase())
-          ) || recipe.name.toLowerCase().includes(dislike.toLowerCase())
-        );
-        if (hasDislikedFood) return false;
-        
-        return true;
+        // Secondary sort by cost (cheaper first)
+        return (a.costPerServing || 0) - (b.costPerServing || 0);
       });
       
-      return filteredRecipes.slice(0, 10);
+             // Need at least 21 recipes for a full week (7 breakfast + 7 lunch + 7 dinner)
+       const recommendations = sortedRecipes.slice(0, Math.max(25, sortedRecipes.length));
+       console.log('Final recommendations:', recommendations.map(r => ({ name: r.name, area: r.area, cost: r.costPerServing, category: r.category })));
+       console.log(`Returning ${recommendations.length} recommendations for meal planning`);
+       
+       return recommendations;
     } catch (error) {
       console.error('Error getting recommendations:', error);
       return [];

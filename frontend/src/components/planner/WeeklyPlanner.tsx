@@ -29,6 +29,15 @@ const WeeklyPlanner: React.FC<WeeklyPlannerProps> = ({ onBack }) => {
   } = useMealPlanStore();
   const [showGroceryList, setShowGroceryList] = useState(false);
 
+  // Debug: Log the current meal plan data
+  console.log('WeeklyPlanner: Current meal plan:', currentMealPlan);
+  if (currentMealPlan) {
+    console.log('WeeklyPlanner: Days:', currentMealPlan.days);
+    currentMealPlan.days.forEach((day, index) => {
+      console.log(`Day ${index + 1} (${day.date}):`, day.meals);
+    });
+  }
+
   if (!currentMealPlan) {
     return (
       <div className="text-center py-12">

@@ -22,7 +22,7 @@ interface MealPlanState {
   clearSelectedRecipes: () => void;
   
   // Meal plan actions
-  createMealPlan: (name: string, startDate: string, budget: number) => Promise<WeeklyMealPlan>;
+  createMealPlan: (name: string, startDate: string, budget: number, recipesToUse?: Recipe[]) => Promise<WeeklyMealPlan>;
   getMealPlan: (id: string) => WeeklyMealPlan | null;
   updateMealPlan: (id: string, updates: Partial<WeeklyMealPlan>) => void;
   deleteMealPlan: (id: string) => void;
@@ -86,23 +86,101 @@ const distributeRecipesAutomatically = (recipes: Recipe[], days: DayPlan[]): Day
   const updatedDays = [...days];
   let recipeIndex = 0;
   
-  // Distribute recipes across the week
-  for (let dayIndex = 0; dayIndex < updatedDays.length; dayIndex++) {
+  console.log('Distributing recipes:', recipes.length, 'recipes across', updatedDays.length, 'days');
+  
+  // Separate recipes by suitability for different meal types
+  const breakfastSuitable = recipes.filter(r => 
+    r.category === 'Breakfast' || 
+    r.category === 'Dessert' || 
+    r.totalTime <= 20 ||
+    r.name.toLowerCase().includes('pancake') ||
+    r.name.toLowerCase().includes('omelette') ||
+    r.name.toLowerCase().includes('toast') ||
+    r.name.toLowerCase().includes('egg')
+  );
+  
+  const dinnerSuitable = recipes.filter(r => 
+    r.category !== 'Breakfast' && 
+    r.category !== 'Dessert'
+  );
+  
+  console.log(`Categorized recipes: ${breakfastSuitable.length} breakfast-suitable, ${dinnerSuitable.length} dinner-suitable`);
+  
+  // Strategy: Distribute evenly across all meal types to ensure full coverage
+  
+  // First pass: Fill one meal slot per day to ensure every day has something
+  for (let dayIndex = 0; dayIndex < updatedDays.length && recipeIndex < recipes.length; dayIndex++) {
     const day = updatedDays[dayIndex];
     
-    // Try to add recipes to dinner slots first, then lunch
+    // Prioritize dinner for the first pass
+    const dinnerMeal = day.meals.find(meal => meal.type === 'dinner');
+    if (dinnerMeal && !dinnerMeal.recipe && recipeIndex < recipes.length) {
+      const recipe = dinnerSuitable.length > 0 ? dinnerSuitable[recipeIndex % dinnerSuitable.length] : recipes[recipeIndex];
+      dinnerMeal.recipe = recipe;
+      dinnerMeal.servings = 4;
+      console.log(`Added ${recipe.name} to ${day.date} dinner (pass 1)`);
+      recipeIndex++;
+    }
+  }
+  
+  // Second pass: Add breakfast to every day
+  for (let dayIndex = 0; dayIndex < updatedDays.length && recipeIndex < recipes.length; dayIndex++) {
+    const day = updatedDays[dayIndex];
+    
+    const breakfastMeal = day.meals.find(meal => meal.type === 'breakfast');
+    if (breakfastMeal && !breakfastMeal.recipe && recipeIndex < recipes.length) {
+      // Use breakfast-suitable recipes if available, otherwise any recipe
+      const recipe = breakfastSuitable.length > 0 ? 
+        breakfastSuitable[(recipeIndex - 7) % breakfastSuitable.length] : 
+        recipes[recipeIndex];
+      breakfastMeal.recipe = recipe;
+      breakfastMeal.servings = 2; // Smaller serving for breakfast
+      console.log(`Added ${recipe.name} to ${day.date} breakfast (pass 2)`);
+      recipeIndex++;
+    }
+  }
+  
+  // Third pass: Add lunch to every day
+  for (let dayIndex = 0; dayIndex < updatedDays.length && recipeIndex < recipes.length; dayIndex++) {
+    const day = updatedDays[dayIndex];
+    
+    const lunchMeal = day.meals.find(meal => meal.type === 'lunch');
+    if (lunchMeal && !lunchMeal.recipe && recipeIndex < recipes.length) {
+      const recipe = recipes[recipeIndex];
+      lunchMeal.recipe = recipe;
+      lunchMeal.servings = 3; // Medium serving for lunch
+      console.log(`Added ${recipe.name} to ${day.date} lunch (pass 3)`);
+      recipeIndex++;
+    }
+  }
+  
+  // Fourth pass: Fill any remaining empty slots
+  for (let dayIndex = 0; dayIndex < updatedDays.length && recipeIndex < recipes.length; dayIndex++) {
+    const day = updatedDays[dayIndex];
+    
     for (const meal of day.meals) {
-      if (recipeIndex >= recipes.length) break;
-      
-      if (meal.type === 'dinner' || meal.type === 'lunch') {
-        if (!meal.recipe) {
-          meal.recipe = recipes[recipeIndex];
-          meal.servings = 4; // Default serving size
-          recipeIndex++;
-        }
+      if (!meal.recipe && recipeIndex < recipes.length) {
+        meal.recipe = recipes[recipeIndex % recipes.length]; // Cycle through recipes if needed
+        meal.servings = meal.type === 'breakfast' ? 2 : meal.type === 'lunch' ? 3 : 4;
+        console.log(`Added ${meal.recipe.name} to ${day.date} ${meal.type} (filling remaining slots)`);
+        recipeIndex++;
       }
     }
   }
+  
+  console.log('Distribution complete. Used', recipeIndex, 'out of', recipes.length, 'recipes');
+  
+  // Log final distribution summary
+  const summary = updatedDays.map((day, index) => ({
+    day: index + 1,
+    date: day.date,
+    meals: day.meals.map(meal => ({
+      type: meal.type,
+      hasRecipe: !!meal.recipe,
+      recipeName: meal.recipe?.name || 'Empty'
+    }))
+  }));
+  console.log('Final meal plan distribution:', summary);
   
   return updatedDays;
 };
@@ -132,7 +210,7 @@ export const useMealPlanStore = create<MealPlanState>()(
         set({ selectedRecipes: [] });
       },
 
-      createMealPlan: async (name: string, startDate: string, budget: number) => {
+      createMealPlan: async (name: string, startDate: string, budget: number, recipesToUse?: Recipe[]) => {
         set({ isCreating: true });
         
         try {
@@ -140,8 +218,16 @@ export const useMealPlanStore = create<MealPlanState>()(
           const endDate = new Date(startDate);
           endDate.setDate(endDate.getDate() + 6);
           
+          // Use provided recipes or fall back to selected recipes
+          const recipes = recipesToUse || selectedRecipes;
+          console.log('Creating meal plan with recipes:', recipes.length, 'recipes');
+          console.log('Recipe names:', recipes.map(r => r.name));
+          
           const emptyDays = createEmptyWeek(startDate);
-          const daysWithRecipes = distributeRecipesAutomatically(selectedRecipes, emptyDays);
+          console.log('Empty days created:', emptyDays.length, 'days');
+          
+          const daysWithRecipes = distributeRecipesAutomatically(recipes, emptyDays);
+          console.log('Days with recipes:', daysWithRecipes);
           
           const newMealPlan: WeeklyMealPlan = {
             id: generateId(),
@@ -155,11 +241,18 @@ export const useMealPlanStore = create<MealPlanState>()(
             updatedAt: new Date().toISOString()
           };
           
+          console.log('Final meal plan created:', newMealPlan);
+          
           set({ 
             mealPlans: [...mealPlans, newMealPlan],
             currentMealPlan: newMealPlan,
             selectedRecipes: [] // Clear selected recipes after creating meal plan
           });
+          
+          // Debug: Check what's actually been set in the store
+          const updatedState = get();
+          console.log('Store updated. Current meal plan:', updatedState.currentMealPlan);
+          console.log('Store updated. All meal plans:', updatedState.mealPlans.length);
           
           return newMealPlan;
         } finally {

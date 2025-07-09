@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useUserStore } from '../../store/userStore';
 import { useMealPlanStore } from '../../store/mealPlanStore';
 import { recipeService } from '../../services/recipeService';
+import { smsService } from '../../services/smsService';
 import { Recipe } from '../../types/Recipe';
 import { 
   Calendar, 
@@ -16,7 +17,8 @@ import {
   X,
   Trash2,
   RefreshCw,
-  Settings
+  Settings,
+  Phone
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -47,6 +49,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
         setLoading(true);
         try {
           const recipes = await recipeService.getRecommendations(profile);
+          console.log('Loaded recommendations:', recipes.length, 'recipes');
           setRecommendations(recipes);
         } catch (error) {
           console.error('Error loading recommendations:', error);
@@ -63,23 +66,52 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
     addRecipeToSelection(recipe);
   };
 
-  const handleCreateMealPlan = async (name: string, startDate: string, useRecommendations: boolean = false) => {
+  const handleCreateMealPlan = async (name: string, startDate: string, phoneNumber: string, useRecommendations: boolean = false) => {
     if (!profile) return;
     
     try {
       let recipesToUse = selectedRecipes;
       
+      console.log('=== MEAL PLAN CREATION DEBUG ===');
+      console.log('useRecommendations:', useRecommendations);
+      console.log('recommendations.length:', recommendations.length);
+      console.log('selectedRecipes.length:', selectedRecipes.length);
+      console.log('phoneNumber provided:', phoneNumber ? 'Yes' : 'No');
+      
       // If user wants to use recommendations, automatically select top recipes
       if (useRecommendations && recommendations.length > 0) {
-        // Clear current selection and use top recommendations
-        clearSelectedRecipes();
-        // Select top 10-12 recipes to fill the week
-        recipesToUse = recommendations.slice(0, 12);
-        // Add them to selection temporarily
-        recipesToUse.forEach(recipe => addRecipeToSelection(recipe));
+        // Select enough recipes to fill the week (21 meals: 7 breakfasts + 7 lunches + 7 dinners)
+        // Take more than needed to ensure variety and fallbacks
+        const recipesNeeded = Math.min(25, recommendations.length);
+        recipesToUse = recommendations.slice(0, recipesNeeded);
+        console.log('Using auto-generated recipes:', recipesToUse.length, 'recipes');
+        console.log('Recipe names:', recipesToUse.map(r => `${r.name} (${r.category})`));
+      } else {
+        console.log('Using selected recipes:', recipesToUse.length, 'recipes');
+        console.log('Recipe names:', recipesToUse.map(r => r.name));
       }
       
-      await createMealPlan(name, startDate, profile.weeklyBudget);
+      if (recipesToUse.length === 0) {
+        console.error('No recipes to use for meal plan!');
+        return;
+      }
+      
+      // Create the meal plan
+      await createMealPlan(name, startDate, profile.weeklyBudget, recipesToUse);
+      
+      // Send SMS notification if phone number provided
+      if (phoneNumber && phoneNumber.trim()) {
+        console.log('Sending SMS notification...');
+        const smsResult = await smsService.sendMealPlanNotification(phoneNumber.trim(), name);
+        
+        if (smsResult.success) {
+          console.log('SMS notification sent successfully');
+        } else {
+          console.error('Failed to send SMS notification:', smsResult.error);
+          // Don't fail the whole process if SMS fails
+        }
+      }
+      
       setShowCreateMealPlan(false);
       onViewMealPlan?.();
     } catch (error) {
@@ -122,12 +154,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
   const CreateMealPlanModal: React.FC = () => {
     const [mealPlanName, setMealPlanName] = useState('');
     const [startDate, setStartDate] = useState('');
-    const [useAutoGeneration, setUseAutoGeneration] = useState(true);
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [useAutoGeneration, setUseAutoGeneration] = useState(recommendations.length > 0);
+
+    // Update auto-generation state when recommendations change
+    React.useEffect(() => {
+      setUseAutoGeneration(recommendations.length > 0);
+    }, [recommendations.length]);
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       if (mealPlanName && startDate) {
-        handleCreateMealPlan(mealPlanName, startDate, useAutoGeneration);
+        console.log('Modal submit - useAutoGeneration:', useAutoGeneration);
+        console.log('Modal submit - recommendations available:', recommendations.length);
+        console.log('Modal submit - phoneNumber:', phoneNumber);
+        handleCreateMealPlan(mealPlanName, startDate, phoneNumber, useAutoGeneration);
       }
     };
 
@@ -175,6 +216,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Phone Number (Optional)
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Phone className={`h-4 w-4 ${phoneNumber && phoneNumber.replace(/\D/g, '').length < 10 ? 'text-red-400' : 'text-gray-400'}`} />
+                </div>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  className={`input pl-10 ${phoneNumber && phoneNumber.replace(/\D/g, '').length < 10 ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}`}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Get an SMS notification when your meal plan is ready
+              </p>
+              {phoneNumber && phoneNumber.replace(/\D/g, '').length < 10 && phoneNumber.replace(/\D/g, '').length > 0 && (
+                <p className="text-xs text-red-600 mt-1">
+                  Please enter a valid phone number (at least 10 digits)
+                </p>
+              )}
+            </div>
+
             <div className="border rounded-lg p-4">
               <h3 className="font-medium text-gray-900 mb-3">Meal Selection</h3>
               
@@ -186,11 +253,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
                     checked={useAutoGeneration}
                     onChange={() => setUseAutoGeneration(true)}
                     className="mr-3"
+                    disabled={recommendations.length === 0}
                   />
                   <div>
-                    <span className="font-medium text-gray-900">Auto-generate from recommendations</span>
+                    <span className={`font-medium ${recommendations.length === 0 ? 'text-gray-400' : 'text-gray-900'}`}>
+                      Auto-generate from recommendations
+                    </span>
                     <p className="text-sm text-gray-600">
-                      Automatically select {recommendations.length > 0 ? Math.min(12, recommendations.length) : 12} recipes based on your preferences
+                      {recommendations.length === 0 
+                        ? 'No recommendations loaded yet. Try refreshing the page.'
+                        : `Automatically select up to 25 recipes from your ${recommendations.length} personalized recommendations (7 breakfasts + 7 lunches + 7 dinners + extras)`
+                      }
                     </p>
                   </div>
                 </label>
@@ -220,6 +293,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
               <p className="text-sm text-gray-600">
                 Household: {profile?.householdSize} people
               </p>
+              {phoneNumber && (
+                <p className="text-sm text-gray-600">
+                  📱 SMS notifications: {smsService.formatPhoneForDisplay(phoneNumber)}
+                </p>
+              )}
+              {useAutoGeneration && recommendations.length === 0 && (
+                <p className="text-sm text-red-600 mt-2">
+                  ⚠️ No recommendations available. Please wait for them to load or select recipes manually.
+                </p>
+              )}
+              {!useAutoGeneration && selectedRecipes.length === 0 && (
+                <p className="text-sm text-red-600 mt-2">
+                  ⚠️ No recipes selected. Please select some recipes from the recommendations first.
+                </p>
+              )}
             </div>
             
             <div className="flex space-x-3">
@@ -232,7 +320,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewMealPlan }) => {
               </button>
               <button
                 type="submit"
-                disabled={isCreating || !mealPlanName || !startDate}
+                disabled={
+                  isCreating || 
+                  !mealPlanName || 
+                  !startDate || 
+                  (phoneNumber && phoneNumber.replace(/\D/g, '').length < 10) ||
+                  (useAutoGeneration && recommendations.length === 0) ||
+                  (!useAutoGeneration && selectedRecipes.length === 0)
+                }
                 className="flex-1 btn-primary disabled:opacity-50"
               >
                 {isCreating ? 'Creating...' : 'Create Meal Plan'}
