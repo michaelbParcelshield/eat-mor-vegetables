@@ -1,5 +1,5 @@
 interface SMSRequest {
-  phoneNumber: string;
+  to: string;
   message: string;
 }
 
@@ -25,7 +25,7 @@ class SMSService {
       const message = `🥗 Great news! You've been subscribed to your meal plan: "${mealPlanName}". Get ready for a week of delicious, budget-friendly meals! - Eat Mor Vegetables`;
 
       const requestData: SMSRequest = {
-        phoneNumber: this.formatPhoneNumber(phoneNumber),
+        to: this.formatPhoneNumber(phoneNumber),
         message
       };
 
