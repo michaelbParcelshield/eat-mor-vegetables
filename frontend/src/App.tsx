@@ -1,9 +1,8 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useUserStore } from './store/userStore';
-import QuickSetup from './components/setup/QuickSetup';
-import Dashboard from './components/dashboard/Dashboard';
-import { Leaf } from 'lucide-react';
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useUserStore } from "./store/userStore";
+import QuickSetup from "./components/setup/QuickSetup";
+import Dashboard from "./components/dashboard/Dashboard";
+import { Leaf } from "lucide-react";
 
 function App() {
   const { profile, isSetupComplete } = useUserStore();
@@ -16,7 +15,9 @@ function App() {
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
               <Leaf className="h-8 w-8 text-primary-600 mr-2" />
-              <h1 className="text-2xl font-bold text-gray-900">Eat Mor Vegetables</h1>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Eat Mor Vegetables
+              </h1>
             </div>
             <p className="text-gray-600">
               Make meal planning easy, budget-friendly, and time-saving
@@ -35,7 +36,9 @@ function App() {
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <Leaf className="h-6 w-6 text-primary-600 mr-2" />
-              <span className="text-xl font-bold text-gray-900">Eat Mor Vegetables</span>
+              <span className="text-xl font-bold text-gray-900">
+                Eat Mor Vegetables
+              </span>
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">
@@ -60,4 +63,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;
